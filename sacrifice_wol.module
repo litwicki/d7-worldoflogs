@@ -1,0 +1,221 @@
+<?php
+
+/**
+ *  Copyright (c) 2012 Litwicki Media
+ *  Written for Sacrifice Guild
+ *  @author: Thezdin, thezdin@sacrificeguild.org
+ *  @license: http://www.gnu.org/copyleft/gpl.html
+ *  @version: $Id$
+ *  
+ */
+
+define('LOG_NODE_TYPE', 'world_of_logs_parse');
+
+function sacrifice_wol_urls() {
+  $world_of_logs_urls = array();
+
+  $sacrifice_world_of_logs_gids = variable_get('sacrifice_world_of_logs_gids');
+  $gids = explode(',', $sacrifice_world_of_logs_gids);
+
+  if(is_array($gids)) {
+    foreach($gids as $gid) {
+      $world_of_logs_urls[] = array(
+        'guild' => 'http://www.worldoflogs.com/guilds/' . $gid . '/',
+        'rankings' => 'http://www.worldoflogs.com/guilds/' . $gid . '/rankings/players/',
+      );
+    }
+  }
+  return $world_of_logs_urls;
+}
+
+function sacrifice_wol_form_sacrifice_admin_form_alter(&$form, &$form_state, $form_id) {
+  $form['sacrifice_raids_settings']['sacrifice_world_of_logs_gids'] = array(
+    '#title' => 'World of Logs Guild IDs',
+    '#description' => t('Comma delimited list of guild ids from world of logs'),
+    '#type' => 'textfield',
+    '#size' => 100,
+    '#default_value' => variable_get('sacrifice_world_of_logs_gids', ''),
+  );
+}
+
+/**
+ * Implement hook_cron
+ */
+function sacrifice_wol_cron() {
+  sacrifice_wol_fetch_ranks(FALSE);
+}
+
+function sacrifice_wol_fetch_ranks($debug = TRUE) {
+
+  $world_of_logs_urls = sacrifice_wol_urls();
+
+  if($debug) {
+    drupal_set_message('Running in DEBUG mode');
+  }
+
+  $log_count = 0;
+  $add_count = 0;
+  $update_count = 0;
+  
+  foreach($world_of_logs_urls as $key => $guild_url) {
+
+    //do this for all 5 pages
+    for($i=0; $i<5; $i++) {
+
+      $url = $guild_url['rankings'];
+      $url = ($i == 0 ? $url : $url . '?page=' . $i);
+
+      $html = file_get_html($url);
+      $rankings = array();
+
+      //first parse the HTML to minimize processing memory
+      foreach($html->find('div#rankings .playerRankMixed tr') as $row) {
+        if(is_object($row->find('td', 0))) {
+          $item['title'] = html_entity_decode($row->find('td', 5)->plaintext, ENT_QUOTES) . ' ' . $row->find('td', 6)->plaintext . ' ' . $row->find('td', 7)->plaintext;
+
+          $raid_type = taxonomy_get_term_by_name($row->find('td', 6)->plaintext . ' ' . $row->find('td', 7)->plaintext);
+          foreach($raid_type as $key => $term) {
+            $raid_type_tid = $term->tid;
+          }
+          $item['raid_type'] = $raid_type_tid;
+
+          $item['rank_link'] = $row->find('td', 0)->innertext;
+          $item['rank_plain'] = strip_tags($item['rank_link']);
+
+          $item['name_link'] = $row->find('td', 1)->innertext;
+          $item['name_plain'] = strip_tags($item['name_link']);
+
+          $item['class_name'] = $row->find('td', 2)->innertext;
+          $item['class_spec'] = $row->find('td', 3)->innertext;
+
+
+          $item['date'] = $row->find('td', 4)->plaintext;
+          $item['boss'] = html_entity_decode($row->find('td', 5)->plaintext, ENT_QUOTES);
+          $item['value_per_second'] = $row->find('td', 9)->plaintext;
+          $item['value'] = str_replace(' ', '', $row->find('td', 11)->plaintext);
+          
+          //we only care about logs for current members
+          //ignore everything nelse
+          $avatar = sacrifice_user_avatar_by_name($item['name_plain']);
+          if(is_object($avatar)) {
+            $rankings[] = $item;
+          }
+
+        }
+      }
+
+      //now handle the array separately
+      foreach($rankings as $ranking) {
+
+        //get avatar from name
+        $avatar = sacrifice_user_avatar_by_name($ranking['name_plain']);
+
+        $aid = $avatar->aid;
+        $uid = $avatar->uid;
+
+        //if this avatar isn't claimed by a user
+        //see if the character name matches a username
+        if(!$uid) {
+          if($debug) {
+            sacrifice_debug_print('Could not find avatar for "' . $ranking['name_plain'] . '," searching for user.');
+          }
+          $raider = sacrifice_user_by_username($ranking['name_plain']);
+          if(is_object($raider)) {
+            $uid = $raider->uid;
+            if($uid) {
+              //TODO: send email to users
+            }
+          }
+        }
+
+        $title = $ranking['title'];
+        
+        //date format: dd-mm-yy
+        $log_date = preg_replace('/(\d{2})\-(\d{2})\-(\d{2})/', '20$3-$2-$1 00:00:00', $ranking['date']);
+        $log_date = strtotime($log_date);
+
+        //create a hash of the 'title' to determine if we need to update or add a node
+        $log_hash = md5($title . $aid);
+        
+        $query = new EntityFieldQuery();
+
+        $query->entityCondition('entity_type', 'node')
+          ->entityCondition('bundle', LOG_NODE_TYPE)
+          ->fieldCondition('field_log_hash', 'value', $log_hash, '=');
+
+        $result = $query->execute();
+
+        if (isset($result['node'])) {
+          $nids = array_keys($result['node']);
+          $node = node_load($nids[0]);
+          $update_count++;
+        }
+        else {
+          $add_count++;
+          $node = new stdClass();
+          $node->type = LOG_NODE_TYPE;
+          $node->field_log_hash = sacrifice_set_field_val($log_hash);
+          node_object_prepare($node); // Sets some defaults. Invokes hook_prepare() and hook_node_prepare().
+        }
+        
+        $node->title = $title;
+        $node->language = LANGUAGE_NONE; // Or e.g. 'en' if locale is enabled
+        $node->uid = 1; 
+        $node->status = 1; //(1 or 0): published or not
+        $node->promote = 0; //(1 or 0): promoted to front page
+        $node->comment = 1; //2 = comments on, 1 = comments off
+
+        //custom fields
+        $node->field_log_date = sacrifice_set_field_val($log_date, 'date');
+        $node->field_character = sacrifice_set_field_val($aid, 'avatar');
+        $node->field_raid_member = sacrifice_set_field_val($uid, 'user');
+        $node->field_rank_number = sacrifice_set_field_val($ranking['rank_plain']);
+        
+        $html = str_get_html($ranking['rank_link']);
+        foreach($html->find('a') as $element) {
+          $rank_url = 'http://www.worldoflogs.com' . html_entity_decode($element->href);
+        }
+
+        $node->field_rank_url = sacrifice_set_field_val($rank_url, 'link');
+        $node->field_rank_link_formatted = sacrifice_set_field_val($ranking['rank_link']);
+
+        $html = str_get_html($ranking['name_link']);
+        foreach($html->find('a') as $element) {
+          $log_url = 'http://www.worldoflogs.com' . html_entity_decode($element->href);
+        }
+        $node->field_log_url = sacrifice_set_field_val($log_url, 'link');
+
+        $node->field_log_value = sacrifice_set_field_val($ranking['value']);
+        $node->field_log_value_per_second = sacrifice_set_field_val($ranking['value_per_second']);
+
+        $node->field_raid_type = sacrifice_set_field_val($ranking['raid_type'], 'term');
+
+        $html = str_get_html($ranking['class_spec']);
+        foreach($html->find('div') as $element) {
+          $rank_spec = $element->class;
+        }
+
+        $html = str_get_html($ranking['class_name']);
+        foreach($html->find('div') as $element) {
+          $rank_class = $element->class;
+        }
+
+        $node->field_rank_spec = sacrifice_set_field_val($rank_spec);
+        $node->field_rank_class = sacrifice_set_field_val($rank_class);
+
+        if($debug){
+          //sacrifice_debug_print($node);
+        }
+        else {
+          node_save($node);
+        }
+
+        $log_count++;
+
+      }
+    }
+  }
+  drupal_set_message($update_count . ' updates.');
+  drupal_set_message($add_count . ' adds.');
+  drupal_set_message($log_count . ' total logs.');
+}

@@ -1,0 +1,8 @@
+name = Sacrifice Guild (World of Logs)
+description = Module to parse World of Logs and fetch top performers for the guild.
+project = sacrifice
+package = Sacrifice (Mannoroth-US)
+
+dependencies[] = sacrifice
+
+core = "7.x"
