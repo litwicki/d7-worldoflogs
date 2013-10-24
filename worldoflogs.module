@@ -1,0 +1,337 @@
+<?php
+
+/**
+ *  Copyright (c) 2012 Litwicki Media
+ *  Written for Sacrifice Guild - www.sacrificeguild.org
+ *  @author: Thezdin, thezdin@sacrificeguild.org
+ *  @license: http://www.gnu.org/copyleft/gpl.html
+ *
+ */
+
+define('WOL_NODE_TYPE', 'worldoflogs');
+
+/**
+ *  Implements hook_menu
+ */
+function worldoflogs_menu() {
+
+  $items = array();
+
+  // Configuration pages.
+  $items['admin/config/worldoflogs'] = array(
+    'title' => 'World of Logs',
+    'description' => 'General World of Logs Configuration.',
+    'position' => 'right',
+    'weight' => -15,
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('access administration pages'),
+    'file' => 'system.admin.inc',
+    'file path' => drupal_get_path('module', 'system'),
+  );
+
+  $items['admin/config/worldoflogs/guilds'] = array(
+    'title' => 'Guild settings',
+    'description' => 'Configure the guilds you want to fetch from.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('worldoflogs_config_guilds_form'),
+    'access arguments' => array('configure worldoflogs'),
+    'file' => 'worldoflogs.admin.inc',
+    'weight' => -10,
+  );
+
+  return $items;
+
+}
+
+/**
+ *  Implement hook_permission
+ */
+function worldoflogs_permission() {
+  return array(
+    // Perms for non-node related functionality in this module.
+    'configure worldoflogs module' => array(
+      'title' => t('Configure World of Logs module'),
+      'description' => t('Configure settings provided by worldoflogs module'),
+    ),
+    // Perms for worldoflogs nodes.
+    'create worldoflogs' => array(
+      'title' => t('Create world of logs'),
+      'description' => t('Create worldoflogs nodes'),
+    ),
+    'edit own worldoflogs' => array(
+      'title' => t('Edit own world of logs'),
+      'description' => t('Edit own worldoflogs nodes'),
+    ),
+    'edit any worldoflogs' => array(
+      'title' => t('Edit any world of logs'),
+      'description' => t('Edit any worldoflogs nodes'),
+    ),
+    'delete own worldoflogs' => array(
+      'title' => t('Delete own world of logs'),
+      'description' => t('Delete own worldoflogs nodes'),
+    ),
+    'delete any worldoflogs' => array(
+      'title' => t('Delete any world of logs'),
+      'description' => t('Delete any worldoflogs nodes'),
+    ),
+    'view own worldoflogs' => array(
+      'title' => t('View own world of logs'),
+      'description' => t('View own worldoflogs nodes'),
+    ),
+    'view any worldoflogs' => array(
+      'title' => t('View any world of logs'),
+      'description' => t('View any worldoflogs nodes'),
+    ),
+  );
+}
+
+function worldoflogs_guild_urls() {
+  $worldoflogs_urls = array();
+
+  $gids = variable_get('worldoflogs_gids');
+  $gids = explode(',', $worldoflogs_gids);
+
+  if(is_array($gids)) {
+    foreach($gids as $gid) {
+      $worldoflogs_urls[] = array(
+        'guild' => 'http://www.worldoflogs.com/guilds/' . $gid . '/',
+        'rankings' => 'http://www.worldoflogs.com/guilds/' . $gid . '/rankings/players/',
+      );
+    }
+  }
+  return $worldoflogs_urls;
+}
+
+/**
+ * Implement hook_cron
+ */
+function worldoflogs_cron() {
+  worldoflogs_fetch_ranks(FALSE);
+}
+
+/**
+ *  Do all the work of fetching ranks
+ *  @package worldoflogs
+ *  @param $debug
+ *    Debug mode will not insert nodes, but will debug print messages.
+ */
+function worldoflogs_fetch_ranks($debug = TRUE) {
+
+  $worldoflogs_urls = worldoflogs_guild_urls();
+
+  if($debug) {
+    drupal_set_message('Running in DEBUG mode');
+  }
+
+  $log_count = 0;
+  $add_count = 0;
+  $update_count = 0;
+
+  foreach($worldoflogs_urls as $key => $guild_url) {
+
+    //do this for all 5 pages
+    for($i=0; $i<5; $i++) {
+
+      $url = $guild_url['rankings'];
+      $url = ($i == 0 ? $url : $url . '?page=' . $i);
+
+      $html = file_get_html($url);
+      $rankings = array();
+
+      //first parse the HTML to minimize processing memory
+      foreach($html->find('div#rankings .playerRankMixed tr') as $row) {
+        if(is_object($row->find('td', 0))) {
+          $item['title'] = html_entity_decode($row->find('td', 5)->plaintext, ENT_QUOTES) . ' ' . $row->find('td', 6)->plaintext . ' ' . $row->find('td', 7)->plaintext;
+
+          $raid_type = taxonomy_get_term_by_name($row->find('td', 6)->plaintext . ' ' . $row->find('td', 7)->plaintext);
+          foreach($raid_type as $key => $term) {
+            $raid_type_tid = $term->tid;
+          }
+          $item['raid_type'] = $raid_type_tid;
+
+          $item['rank_link'] = $row->find('td', 0)->innertext;
+          $item['rank_plain'] = strip_tags($item['rank_link']);
+
+          $item['name_link'] = $row->find('td', 1)->innertext;
+          $item['name_plain'] = strip_tags($item['name_link']);
+
+          $item['class_name'] = $row->find('td', 2)->innertext;
+          $item['class_spec'] = $row->find('td', 3)->innertext;
+
+
+          $item['date'] = $row->find('td', 4)->plaintext;
+          $item['boss'] = html_entity_decode($row->find('td', 5)->plaintext, ENT_QUOTES);
+          $item['value_per_second'] = $row->find('td', 9)->plaintext;
+          $item['value'] = str_replace(' ', '', $row->find('td', 11)->plaintext);
+
+          //we only care about logs for current members
+          //ignore everything nelse
+          $avatar = user_avatar_by_name($item['name_plain']);
+          if(is_object($avatar)) {
+            $rankings[] = $item;
+          }
+
+        }
+      }
+
+      //now handle the array separately
+      foreach($rankings as $ranking) {
+
+        //get avatar from name
+        $account = user_load_by_name($ranking['name_plain']);
+
+        //@TODO; fetch avatars from the user account
+        //via wow_character avatar ids
+
+        $uid = 1;
+
+        $title = $ranking['title'];
+
+        //date format: dd-mm-yy
+        $log_date = preg_replace('/(\d{2})\-(\d{2})\-(\d{2})/', '20$3-$2-$1 00:00:00', $ranking['date']);
+        $log_date = strtotime($log_date);
+
+        //create a hash of the 'title' to determine if we need to update or add a node
+        $log_hash = md5($title . $aid);
+
+        $query = new EntityFieldQuery();
+
+        $query->entityCondition('entity_type', 'node')
+          ->entityCondition('bundle', LOG_NODE_TYPE)
+          ->fieldCondition('field_log_hash', 'value', $log_hash, '=');
+
+        $result = $query->execute();
+
+        if (isset($result['node'])) {
+          $nids = array_keys($result['node']);
+          $node = node_load($nids[0]);
+          $update_count++;
+        }
+        else {
+          $add_count++;
+          $node = new stdClass();
+          $node->type = LOG_NODE_TYPE;
+          $node->field_log_hash = set_field_val($log_hash);
+          node_object_prepare($node); // Sets some defaults. Invokes hook_prepare() and hook_node_prepare().
+        }
+
+        $node->title = $title;
+        $node->language = LANGUAGE_NONE; // Or e.g. 'en' if locale is enabled
+        $node->uid = 1;
+        $node->status = 1; //(1 or 0): published or not
+        $node->promote = 0; //(1 or 0): promoted to front page
+        $node->comment = 1; //2 = comments on, 1 = comments off
+
+        //custom fields
+        $node->field_log_date = set_field_val($log_date, 'date');
+        $node->field_character = set_field_val($aid, 'avatar');
+        $node->field_raid_member = set_field_val($uid, 'user');
+        $node->field_rank_number = set_field_val($ranking['rank_plain']);
+
+        $html = str_get_html($ranking['rank_link']);
+        foreach($html->find('a') as $element) {
+          $rank_url = 'http://www.worldoflogs.com' . html_entity_decode($element->href);
+        }
+
+        $node->field_rank_url = set_field_val($rank_url, 'link');
+        $node->field_rank_link_formatted = set_field_val($ranking['rank_link']);
+
+        $html = str_get_html($ranking['name_link']);
+        foreach($html->find('a') as $element) {
+          $log_url = 'http://www.worldoflogs.com' . html_entity_decode($element->href);
+        }
+        $node->field_log_url = set_field_val($log_url, 'link');
+
+        $node->field_log_value = set_field_val($ranking['value']);
+        $node->field_log_value_per_second = set_field_val($ranking['value_per_second']);
+
+        $node->field_raid_type = set_field_val($ranking['raid_type'], 'term');
+
+        $html = str_get_html($ranking['class_spec']);
+        foreach($html->find('div') as $element) {
+          $rank_spec = $element->class;
+        }
+
+        $html = str_get_html($ranking['class_name']);
+        foreach($html->find('div') as $element) {
+          $rank_class = $element->class;
+        }
+
+        $node->field_rank_spec = set_field_val($rank_spec);
+        $node->field_rank_class = set_field_val($rank_class);
+
+        if($debug){
+          //debug_print($node);
+        }
+        else {
+          node_save($node);
+        }
+
+        $log_count++;
+
+      }
+    }
+  }
+
+  drupal_set_message($update_count . ' updates.');
+  drupal_set_message($add_count . ' adds.');
+  drupal_set_message($log_count . ' total logs.');
+
+}
+
+/**
+ * Implements hook_node_access().
+ *
+ * @package worldoflogs
+ * @package permission
+ */
+function worldoflogs_node_access($op, $node, $account) {
+  //if we're dealing with an authenticated user, then check for
+  //node permissions, otherwise they have none.
+  if(is_object($account) && (is_object($node) && $node->type == 'worldoflogs')) {
+
+    $is_author = $account->uid == $node->uid;
+
+    switch($op) {
+      case 'create':
+        if(user_access('create worldoflogs', $account)) {
+          return NODE_ACCESS_ALLOW;
+        }
+        break;
+      case 'update':
+        if( (user_access('edit own worldoflogs', $account) && $is_author) ||
+            (user_access('edit any worldoflogs', $account))  ) {
+          return NODE_ACCESS_ALLOW;
+        }
+        break;
+      case 'delete':
+        if( (user_access('delete own worldoflogs', $account) && $is_author) ||
+            (user_access('delete any worldoflogs', $account))  ) {
+          return NODE_ACCESS_ALLOW;
+        }
+        break;
+      case 'view':
+        if( (user_access('view own worldoflogs', $account) && $is_author) ||
+            (user_access('view any worldoflogs', $account))  ) {
+          return NODE_ACCESS_ALLOW;
+        }
+        break;
+    }
+
+    return NODE_ACCESS_IGNORE;
+  }
+
+}
+
+
+/**
+ * Implements hook_views_api().
+ *
+ * @package worldoflogs
+ * @package views
+ *
+ * @return array Returns the version of the views API for use, as an array.
+ */
+function worldoflogs_views_api() {
+  return array('api' => 3.0);
+}

@@ -1,0 +1,1504 @@
+<?php
+
+/**
+ *  Copyright (c) 2012 Litwicki Media
+ *  Written for Sacrifice Guild - www.sacrificeguild.org
+ *  @author: Thezdin, thezdin@sacrificeguild.org
+ *  @license: http://www.gnu.org/copyleft/gpl.html
+ *
+ */
+
+
+/**
+ * Implements hook_install().
+ */
+function worldoflogs_install() {
+  // During installation, the t() function is unavailable, so we use get_t()
+  // to store the name of the translation function.
+  $t = get_t();
+
+  // We define the node type as an associative array.
+  $worldoflogs = array(
+    'type' => 'worldoflogs',
+    'name' => $t('Epeen'),
+    // 'base' tells Drupal the base string for hook functions.
+    // This is often the module name; if base is set to 'mymodule', Drupal
+    // would call mymodule_insert() or similar for node hooks.
+    // In this case, we set base equal to 'node_content' so Drupal will handle
+    // our node as if we had designed it in the UI.
+    'base' => 'node_content',
+    'description' => $t('World of Logs performance parse.'),
+    'title_label' => $t('Subject'),
+    'body_label' => $t('Description'),
+    'locked' => TRUE,
+    'custom' => 0,
+  );
+
+  // Complete the node type definition by setting any defaults not explicitly
+  // declared above.
+  // http://api.drupal.org/api/function/node_type_set_defaults/7
+  $content_type = node_type_set_defaults($worldoflogs);
+
+  // Save the content type
+  node_type_save($content_type);
+
+  // Add the body field.
+  $body_instance = node_add_body_field($content_type, $worldoflogs['body_label']);
+
+  // Create all the fields we are adding to our content type.
+  // http://api.drupal.org/api/function/field_create_field/7
+  foreach (_worldoflogs_installed_fields() as $field_name => $field) {
+    //in case we disabled, but did not uninstall the module
+    //we want to make sure we do not explode drupal by
+    //trying to recreate existing fields if/when we re-enable
+    //the module without having uninstalled
+    $info = field_info_field($field_name);
+    if(empty($info)) {
+      field_create_field($field);
+    }
+  }
+
+  // Create all worldoflogs instances for our fields.
+  // http://api.drupal.org/api/function/field_create_instance/7
+  foreach (_worldoflogs_installed_instances() as $instance) {
+    $instance['entity_type'] = 'node';
+    $instance['bundle'] = 'worldoflogs';
+    //in case we disabled, but did not uninstall the module
+    //we want to make sure we do not explode drupal by
+    //trying to recreate existing instance(s) if/when we re-enable
+    //the module without having uninstalled
+    $info = field_info_instance('node', $instance['field_name'], 'worldoflogs');
+    if(empty($info)) {
+      field_create_instance($instance);
+    }
+  }
+
+  // Set option vars for the worldoflogs content type.
+  variable_set('node_options_worldoflogs', array('status'));
+  variable_set('node_preview_worldoflogs', 0);
+  variable_set('node_submitted_worldoflogs', 0);
+  variable_set('comment_worldoflogs', 0);
+
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function worldoflogs_uninstall() {
+  // Gather all the example content that might have been created while this
+  // module was enabled.
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+        ->entityCondition('bundle', 'worldoflogs');
+  $result = $query->execute();
+  if(isset($result['node'])) {
+    $nids = array_keys($result['node']);
+  }
+
+  // Delete all the nodes at once
+  // http://api.drupal.org/api/function/node_delete_multiple/7
+  node_delete_multiple($nids);
+
+  // Delete our content type
+  // http://api.drupal.org/api/function/node_type_delete/7
+  node_type_delete('worldoflogs');
+
+  // Delete our fields/instances.
+  $fields = _worldoflogs_installed_fields();
+  foreach($fields as $field_name => $field_info) {
+    field_delete_field($field_name);
+  }
+
+  cache_clear_all();
+
+  $batch_size = count($nids) > count($fields) ? count($nids) : count($fields);
+
+  // Purge all field infromation
+  // http://api.drupal.org/api/function/field_purge_batch/7
+  field_purge_batch($batch_size);
+}
+
+/**
+ * Returns a structured array defining the fields created by this module.
+ *
+ * This is factored into this function so it can be used in both
+ * hook_install() and hook_uninstall().
+ *
+ * @return
+ */
+function _worldoflogs_installed_fields() {
+  $t = get_t();
+
+  $fields = array(
+  'field_log_date' => array(
+    'translatable' => '0',
+    'entity_types' => array(
+    ),
+    'settings' => array(
+      'granularity' => array(
+        'month' => 'month',
+        'day' => 'day',
+        'year' => 'year',
+        'hour' => 0,
+        'minute' => 0,
+        'second' => 0,
+      ),
+      'tz_handling' => 'none',
+      'timezone_db' => '',
+      'cache_enabled' => 0,
+      'cache_count' => '4',
+      'key' => FALSE,
+      'todate' => '',
+    ),
+    'storage' => array(
+      'type' => 'field_sql_storage',
+      'settings' => array(
+      ),
+      'module' => 'field_sql_storage',
+      'active' => '1',
+      'details' => array(
+        'sql' => array(
+          'FIELD_LOAD_CURRENT' => array(
+            'field_data_field_log_date' => array(
+              'value' => 'field_log_date_value',
+            ),
+          ),
+          'FIELD_LOAD_REVISION' => array(
+            'field_revision_field_log_date' => array(
+              'value' => 'field_log_date_value',
+            ),
+          ),
+        ),
+      ),
+    ),
+    'foreign keys' => array(
+    ),
+    'indexes' => array(
+    ),
+    'id' => '88',
+    'field_name' => 'field_log_date',
+    'type' => 'datetime',
+    'module' => 'date',
+    'active' => '1',
+    'locked' => '0',
+    'cardinality' => '1',
+    'deleted' => '0',
+    'columns' => array(
+      'value' => array(
+        'type' => 'datetime',
+        'mysql_type' => 'datetime',
+        'pgsql_type' => 'timestamp without time zone',
+        'sqlite_type' => 'varchar',
+        'sqlsrv_type' => 'smalldatetime',
+        'key' => FALSE,
+        'key' => TRUE,
+        'key' => TRUE,
+      ),
+    ),
+    'bundles' => array(
+      'node' => array(
+        '0' => 'world_of_logs_parse',
+      ),
+    ),
+  ),
+  'field_rank_number' => array(
+    'translatable' => '0',
+    'entity_types' => array(
+    ),
+    'settings' => array(
+      'key' => FALSE,
+    ),
+    'storage' => array(
+      'type' => 'field_sql_storage',
+      'settings' => array(
+      ),
+      'module' => 'field_sql_storage',
+      'active' => '1',
+      'details' => array(
+        'sql' => array(
+          'FIELD_LOAD_CURRENT' => array(
+            'field_data_field_rank_number' => array(
+              'value' => 'field_rank_number_value',
+            ),
+          ),
+          'FIELD_LOAD_REVISION' => array(
+            'field_revision_field_rank_number' => array(
+              'value' => 'field_rank_number_value',
+            ),
+          ),
+        ),
+      ),
+    ),
+    'foreign keys' => array(
+    ),
+    'indexes' => array(
+    ),
+    'id' => '89',
+    'field_name' => 'field_rank_number',
+    'type' => 'number_integer',
+    'module' => 'number',
+    'active' => '1',
+    'locked' => '0',
+    'cardinality' => '1',
+    'deleted' => '0',
+    'columns' => array(
+      'value' => array(
+        'type' => 'int',
+        'key' => FALSE,
+      ),
+    ),
+    'bundles' => array(
+      'node' => array(
+        '0' => 'world_of_logs_parse',
+      ),
+    ),
+  ),
+  'field_log_url' => array(
+    'translatable' => '0',
+    'entity_types' => array(
+    ),
+    'settings' => array(
+      'key' => FALSE,
+      'attributes' => array(
+        'target' => 'default',
+        'class' => '',
+        'rel' => '',
+      ),
+      'url' => 0,
+      'title' => 'optional',
+      'title_value' => '',
+      'title_maxlength' => 128,
+      'enable_tokens' => 1,
+      'display' => array(
+        'url_cutoff' => 80,
+      ),
+    ),
+    'storage' => array(
+      'type' => 'field_sql_storage',
+      'settings' => array(
+      ),
+      'module' => 'field_sql_storage',
+      'active' => '1',
+      'details' => array(
+        'sql' => array(
+          'FIELD_LOAD_CURRENT' => array(
+            'field_data_field_log_url' => array(
+              'url' => 'field_log_url_url',
+              'title' => 'field_log_url_title',
+              'attributes' => 'field_log_url_attributes',
+            ),
+          ),
+          'FIELD_LOAD_REVISION' => array(
+            'field_revision_field_log_url' => array(
+              'url' => 'field_log_url_url',
+              'title' => 'field_log_url_title',
+              'attributes' => 'field_log_url_attributes',
+            ),
+          ),
+        ),
+      ),
+    ),
+    'foreign keys' => array(
+    ),
+    'indexes' => array(
+    ),
+    'id' => '90',
+    'field_name' => 'field_log_url',
+    'type' => 'link_field',
+    'module' => 'link',
+    'active' => '1',
+    'locked' => '0',
+    'cardinality' => '1',
+    'deleted' => '0',
+    'columns' => array(
+      'url' => array(
+        'type' => 'varchar',
+        'length' => 2048,
+        'key' => FALSE,
+        'key' => TRUE,
+      ),
+      'title' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'key' => FALSE,
+        'key' => TRUE,
+      ),
+      'attributes' => array(
+        'type' => 'text',
+        'size' => 'medium',
+        'key' => FALSE,
+      ),
+    ),
+    'bundles' => array(
+      'node' => array(
+        '0' => 'world_of_logs_parse',
+      ),
+    ),
+  ),
+  'field_log_value' => array(
+    'translatable' => '0',
+    'entity_types' => array(
+    ),
+    'settings' => array(
+      'decimal_separator' => '.',
+      'key' => FALSE,
+    ),
+    'storage' => array(
+      'type' => 'field_sql_storage',
+      'settings' => array(
+      ),
+      'module' => 'field_sql_storage',
+      'active' => '1',
+      'details' => array(
+        'sql' => array(
+          'FIELD_LOAD_CURRENT' => array(
+            'field_data_field_log_value' => array(
+              'value' => 'field_log_value_value',
+            ),
+          ),
+          'FIELD_LOAD_REVISION' => array(
+            'field_revision_field_log_value' => array(
+              'value' => 'field_log_value_value',
+            ),
+          ),
+        ),
+      ),
+    ),
+    'foreign keys' => array(
+    ),
+    'indexes' => array(
+    ),
+    'id' => '93',
+    'field_name' => 'field_log_value',
+    'type' => 'number_float',
+    'module' => 'number',
+    'active' => '1',
+    'locked' => '0',
+    'cardinality' => '1',
+    'deleted' => '0',
+    'columns' => array(
+      'value' => array(
+        'type' => 'float',
+        'key' => FALSE,
+      ),
+    ),
+    'bundles' => array(
+      'node' => array(
+        '0' => 'world_of_logs_parse',
+      ),
+    ),
+  ),
+  'field_log_value_per_second' => array(
+    'translatable' => '0',
+    'entity_types' => array(
+    ),
+    'settings' => array(
+      'decimal_separator' => '.',
+      'key' => FALSE,
+    ),
+    'storage' => array(
+      'type' => 'field_sql_storage',
+      'settings' => array(
+      ),
+      'module' => 'field_sql_storage',
+      'active' => '1',
+      'details' => array(
+        'sql' => array(
+          'FIELD_LOAD_CURRENT' => array(
+            'field_data_field_log_value_per_second' => array(
+              'value' => 'field_log_value_per_second_value',
+            ),
+          ),
+          'FIELD_LOAD_REVISION' => array(
+            'field_revision_field_log_value_per_second' => array(
+              'value' => 'field_log_value_per_second_value',
+            ),
+          ),
+        ),
+      ),
+    ),
+    'foreign keys' => array(
+    ),
+    'indexes' => array(
+    ),
+    'id' => '94',
+    'field_name' => 'field_log_value_per_second',
+    'type' => 'number_float',
+    'module' => 'number',
+    'active' => '1',
+    'locked' => '0',
+    'cardinality' => '1',
+    'deleted' => '0',
+    'columns' => array(
+      'value' => array(
+        'type' => 'float',
+        'key' => FALSE,
+      ),
+    ),
+    'bundles' => array(
+      'node' => array(
+        '0' => 'world_of_logs_parse',
+      ),
+    ),
+  ),
+  'field_rank_url' => array(
+    'translatable' => '0',
+    'entity_types' => array(
+    ),
+    'settings' => array(
+      'key' => FALSE,
+      'attributes' => array(
+        'target' => 'default',
+        'class' => '',
+        'rel' => '',
+      ),
+      'url' => 0,
+      'title' => 'optional',
+      'title_value' => '',
+      'title_maxlength' => 128,
+      'enable_tokens' => 1,
+      'display' => array(
+        'url_cutoff' => 80,
+      ),
+    ),
+    'storage' => array(
+      'type' => 'field_sql_storage',
+      'settings' => array(
+      ),
+      'module' => 'field_sql_storage',
+      'active' => '1',
+      'details' => array(
+        'sql' => array(
+          'FIELD_LOAD_CURRENT' => array(
+            'field_data_field_rank_url' => array(
+              'url' => 'field_rank_url_url',
+              'title' => 'field_rank_url_title',
+              'attributes' => 'field_rank_url_attributes',
+            ),
+          ),
+          'FIELD_LOAD_REVISION' => array(
+            'field_revision_field_rank_url' => array(
+              'url' => 'field_rank_url_url',
+              'title' => 'field_rank_url_title',
+              'attributes' => 'field_rank_url_attributes',
+            ),
+          ),
+        ),
+      ),
+    ),
+    'foreign keys' => array(
+    ),
+    'indexes' => array(
+    ),
+    'id' => '95',
+    'field_name' => 'field_rank_url',
+    'type' => 'link_field',
+    'module' => 'link',
+    'active' => '1',
+    'locked' => '0',
+    'cardinality' => '1',
+    'deleted' => '0',
+    'columns' => array(
+      'url' => array(
+        'type' => 'varchar',
+        'length' => 2048,
+        'key' => FALSE,
+        'key' => TRUE,
+      ),
+      'title' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'key' => FALSE,
+        'key' => TRUE,
+      ),
+      'attributes' => array(
+        'type' => 'text',
+        'size' => 'medium',
+        'key' => FALSE,
+      ),
+    ),
+    'bundles' => array(
+      'node' => array(
+        '0' => 'world_of_logs_parse',
+      ),
+    ),
+  ),
+  'field_log_hash' => array(
+    'translatable' => '0',
+    'entity_types' => array(
+    ),
+    'settings' => array(
+      'max_length' => '255',
+      'key' => FALSE,
+    ),
+    'storage' => array(
+      'type' => 'field_sql_storage',
+      'settings' => array(
+      ),
+      'module' => 'field_sql_storage',
+      'active' => '1',
+      'details' => array(
+        'sql' => array(
+          'FIELD_LOAD_CURRENT' => array(
+            'field_data_field_log_hash' => array(
+              'value' => 'field_log_hash_value',
+              'format' => 'field_log_hash_format',
+            ),
+          ),
+          'FIELD_LOAD_REVISION' => array(
+            'field_revision_field_log_hash' => array(
+              'value' => 'field_log_hash_value',
+              'format' => 'field_log_hash_format',
+            ),
+          ),
+        ),
+      ),
+    ),
+    'foreign keys' => array(
+      'format' => array(
+        'table' => 'filter_format',
+        'columns' => array(
+          'format' => 'format',
+        ),
+      ),
+    ),
+    'indexes' => array(
+      'format' => array(
+        '0' => 'format',
+      ),
+    ),
+    'id' => '97',
+    'field_name' => 'field_log_hash',
+    'type' => 'text',
+    'module' => 'text',
+    'active' => '1',
+    'locked' => '0',
+    'cardinality' => '1',
+    'deleted' => '0',
+    'columns' => array(
+      'value' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'key' => FALSE,
+      ),
+      'format' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'key' => FALSE,
+      ),
+    ),
+    'bundles' => array(
+      'node' => array(
+        '0' => 'world_of_logs_parse',
+      ),
+    ),
+  ),
+  'field_rank_link_formatted' => array(
+    'translatable' => '0',
+    'entity_types' => array(
+    ),
+    'settings' => array(
+      'key' => FALSE,
+    ),
+    'storage' => array(
+      'type' => 'field_sql_storage',
+      'settings' => array(
+      ),
+      'module' => 'field_sql_storage',
+      'active' => '1',
+      'details' => array(
+        'sql' => array(
+          'FIELD_LOAD_CURRENT' => array(
+            'field_data_field_rank_link_formatted' => array(
+              'value' => 'field_rank_link_formatted_value',
+              'format' => 'field_rank_link_formatted_format',
+            ),
+          ),
+          'FIELD_LOAD_REVISION' => array(
+            'field_revision_field_rank_link_formatted' => array(
+              'value' => 'field_rank_link_formatted_value',
+              'format' => 'field_rank_link_formatted_format',
+            ),
+          ),
+        ),
+      ),
+    ),
+    'foreign keys' => array(
+      'format' => array(
+        'table' => 'filter_format',
+        'columns' => array(
+          'format' => 'format',
+        ),
+      ),
+    ),
+    'indexes' => array(
+      'format' => array(
+        '0' => 'format',
+      ),
+    ),
+    'id' => '98',
+    'field_name' => 'field_rank_link_formatted',
+    'type' => 'text_long',
+    'module' => 'text',
+    'active' => '1',
+    'locked' => '0',
+    'cardinality' => '1',
+    'deleted' => '0',
+    'columns' => array(
+      'value' => array(
+        'type' => 'text',
+        'size' => 'big',
+        'key' => FALSE,
+      ),
+      'format' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'key' => FALSE,
+      ),
+    ),
+    'bundles' => array(
+      'node' => array(
+        '0' => 'world_of_logs_parse',
+      ),
+    ),
+  ),
+  'field_raid_type' => array(
+    'translatable' => '0',
+    'entity_types' => array(
+    ),
+    'settings' => array(
+      'allowed_values' => array(
+        '0' => array(
+          'vocabulary' => 'raid_types',
+          'parent' => '0',
+        ),
+      ),
+      'key' => FALSE,
+    ),
+    'storage' => array(
+      'type' => 'field_sql_storage',
+      'settings' => array(
+      ),
+      'module' => 'field_sql_storage',
+      'active' => '1',
+      'details' => array(
+        'sql' => array(
+          'FIELD_LOAD_CURRENT' => array(
+            'field_data_field_raid_type' => array(
+              'tid' => 'field_raid_type_tid',
+            ),
+          ),
+          'FIELD_LOAD_REVISION' => array(
+            'field_revision_field_raid_type' => array(
+              'tid' => 'field_raid_type_tid',
+            ),
+          ),
+        ),
+      ),
+    ),
+    'foreign keys' => array(
+      'tid' => array(
+        'table' => 'taxonomy_term_data',
+        'columns' => array(
+          'tid' => 'tid',
+        ),
+      ),
+    ),
+    'indexes' => array(
+      'tid' => array(
+        '0' => 'tid',
+      ),
+    ),
+    'id' => '99',
+    'field_name' => 'field_raid_type',
+    'type' => 'taxonomy_term_reference',
+    'module' => 'taxonomy',
+    'active' => '1',
+    'locked' => '0',
+    'cardinality' => '1',
+    'deleted' => '0',
+    'columns' => array(
+      'tid' => array(
+        'type' => 'int',
+        'key' => TRUE,
+        'key' => FALSE,
+      ),
+    ),
+    'bundles' => array(
+      'node' => array(
+        '0' => 'world_of_logs_parse',
+      ),
+    ),
+  ),
+  'field_raid_member' => array(
+    'translatable' => '0',
+    'entity_types' => array(
+    ),
+    'settings' => array(
+      'referenceable_roles' => array(
+        '6' => '6',
+        '4' => '4',
+        '5' => '5',
+        '2' => 0,
+        '7' => 0,
+        '3' => 0,
+        '8' => 0,
+        '9' => 0,
+      ),
+      'referenceable_status' => array(
+        '1' => '1',
+        '0' => 0,
+      ),
+      'key' => FALSE,
+      'view' => array(
+        'view_name' => '',
+        'display_name' => '',
+        'args' => array(
+        ),
+      ),
+    ),
+    'storage' => array(
+      'type' => 'field_sql_storage',
+      'settings' => array(
+      ),
+      'module' => 'field_sql_storage',
+      'active' => '1',
+      'details' => array(
+        'sql' => array(
+          'FIELD_LOAD_CURRENT' => array(
+            'field_data_field_raid_member' => array(
+              'uid' => 'field_raid_member_uid',
+            ),
+          ),
+          'FIELD_LOAD_REVISION' => array(
+            'field_revision_field_raid_member' => array(
+              'uid' => 'field_raid_member_uid',
+            ),
+          ),
+        ),
+      ),
+    ),
+    'foreign keys' => array(
+      'uid' => array(
+        'table' => 'users',
+        'columns' => array(
+          'uid' => 'uid',
+        ),
+      ),
+    ),
+    'indexes' => array(
+      'uid' => array(
+        '0' => 'uid',
+      ),
+    ),
+    'id' => '100',
+    'field_name' => 'field_raid_member',
+    'type' => 'user_reference',
+    'module' => 'user_reference',
+    'active' => '1',
+    'locked' => '0',
+    'cardinality' => '1',
+    'deleted' => '0',
+    'columns' => array(
+      'uid' => array(
+        'type' => 'int',
+        'key' => TRUE,
+        'key' => FALSE,
+      ),
+    ),
+    'bundles' => array(
+      'node' => array(
+        '0' => 'world_of_logs_parse',
+      ),
+    ),
+  ),
+  'field_rank_spec' => array(
+    'translatable' => '0',
+    'entity_types' => array(
+    ),
+    'settings' => array(
+      'max_length' => '255',
+      'key' => FALSE,
+    ),
+    'storage' => array(
+      'type' => 'field_sql_storage',
+      'settings' => array(
+      ),
+      'module' => 'field_sql_storage',
+      'active' => '1',
+      'details' => array(
+        'sql' => array(
+          'FIELD_LOAD_CURRENT' => array(
+            'field_data_field_rank_spec' => array(
+              'value' => 'field_rank_spec_value',
+              'format' => 'field_rank_spec_format',
+            ),
+          ),
+          'FIELD_LOAD_REVISION' => array(
+            'field_revision_field_rank_spec' => array(
+              'value' => 'field_rank_spec_value',
+              'format' => 'field_rank_spec_format',
+            ),
+          ),
+        ),
+      ),
+    ),
+    'foreign keys' => array(
+      'format' => array(
+        'table' => 'filter_format',
+        'columns' => array(
+          'format' => 'format',
+        ),
+      ),
+    ),
+    'indexes' => array(
+      'format' => array(
+        '0' => 'format',
+      ),
+    ),
+    'id' => '101',
+    'field_name' => 'field_rank_spec',
+    'type' => 'text',
+    'module' => 'text',
+    'active' => '1',
+    'locked' => '0',
+    'cardinality' => '1',
+    'deleted' => '0',
+    'columns' => array(
+      'value' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'key' => FALSE,
+      ),
+      'format' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'key' => FALSE,
+      ),
+    ),
+    'bundles' => array(
+      'node' => array(
+        '0' => 'world_of_logs_parse',
+      ),
+    ),
+  ),
+  'field_rank_class' => array(
+    'translatable' => '0',
+    'entity_types' => array(
+    ),
+    'settings' => array(
+      'max_length' => '255',
+      'key' => FALSE,
+    ),
+    'storage' => array(
+      'type' => 'field_sql_storage',
+      'settings' => array(
+      ),
+      'module' => 'field_sql_storage',
+      'active' => '1',
+      'details' => array(
+        'sql' => array(
+          'FIELD_LOAD_CURRENT' => array(
+            'field_data_field_rank_class' => array(
+              'value' => 'field_rank_class_value',
+              'format' => 'field_rank_class_format',
+            ),
+          ),
+          'FIELD_LOAD_REVISION' => array(
+            'field_revision_field_rank_class' => array(
+              'value' => 'field_rank_class_value',
+              'format' => 'field_rank_class_format',
+            ),
+          ),
+        ),
+      ),
+    ),
+    'foreign keys' => array(
+      'format' => array(
+        'table' => 'filter_format',
+        'columns' => array(
+          'format' => 'format',
+        ),
+      ),
+    ),
+    'indexes' => array(
+      'format' => array(
+        '0' => 'format',
+      ),
+    ),
+    'id' => '102',
+    'field_name' => 'field_rank_class',
+    'type' => 'text',
+    'module' => 'text',
+    'active' => '1',
+    'locked' => '0',
+    'cardinality' => '1',
+    'deleted' => '0',
+    'columns' => array(
+      'value' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'key' => FALSE,
+      ),
+      'format' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'key' => FALSE,
+      ),
+    ),
+    'bundles' => array(
+      'node' => array(
+        '0' => 'world_of_logs_parse',
+      ),
+    ),
+  ),);
+
+  return $fields;
+
+}
+
+
+/**
+ * Returns a structured array defining the instances for this content type.
+ *
+ * The instance lets Drupal know which widget to use to allow the user to enter
+ * data and how to react in different view modes.
+ *
+ * This is factored into this function so it can be used in both
+ * hook_install() and hook_uninstall().
+ *
+ * @return
+ */
+function _worldoflogs_installed_instances() {
+  $t = get_t();
+  $instances = array(
+    '71' => array(
+      'field_name' => 'field_log_date',
+      'entity_type' => 'node',
+      'bundle' => 'world_of_logs_parse',
+      'label' => 'Log Date',
+      'description' => '',
+      'required' => 1,
+      'settings' => array(
+        'default_value' => 'now',
+        'default_value_code' => '',
+        'default_value2' => 'same',
+        'default_value_code2' => '',
+        'key' => FALSE,
+      ),
+      'widget' => array(
+        'weight' => '4',
+        'type' => 'date_popup',
+        'module' => 'date',
+        'active' => 1,
+        'settings' => array(
+          'input_format' => 'm/d/Y - H:i:s',
+          'input_format_custom' => '',
+          'year_range' => '-3:+0',
+          'increment' => '30',
+          'label_position' => 'none',
+          'text_parts' => array(
+          ),
+        ),
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'hidden',
+          'type' => 'date_default',
+          'weight' => '0',
+          'settings' => array(
+            'format_type' => 'long',
+            'multiple_number' => '',
+            'multiple_from' => '',
+            'multiple_to' => '',
+            'fromto' => 'both',
+          ),
+          'module' => 'date',
+        ),
+      ),
+    ),
+    '72' => array(
+      'field_name' => 'field_rank_number',
+      'entity_type' => 'node',
+      'bundle' => 'world_of_logs_parse',
+      'label' => 'Rank Number',
+      'description' => '',
+      'required' => 1,
+      'settings' => array(
+        'min' => '0',
+        'max' => '200',
+        'prefix' => '',
+        'suffix' => '',
+        'key' => FALSE,
+      ),
+      'widget' => array(
+        'weight' => '7',
+        'type' => 'number',
+        'module' => 'number',
+        'active' => 0,
+        'settings' => array(
+        ),
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'inline',
+          'type' => 'number_integer',
+          'weight' => '2',
+          'settings' => array(
+            'thousand_separator' => ',',
+            'prefix_suffix' => 1,
+            'decimal_separator' => '.',
+            'scale' => 0,
+          ),
+          'module' => 'number',
+        ),
+      ),
+    ),
+    '73' => array(
+      'field_name' => 'field_log_url',
+      'entity_type' => 'node',
+      'bundle' => 'world_of_logs_parse',
+      'label' => 'Log URL',
+      'description' => '',
+      'required' => 0,
+      'settings' => array(
+        'validate_url' => 1,
+        'url' => 0,
+        'title' => 'none',
+        'title_value' => '',
+        'title_maxlength' => '128',
+        'enable_tokens' => 1,
+        'display' => array(
+          'url_cutoff' => '80',
+        ),
+        'attributes' => array(
+          'target' => '_blank',
+          'rel' => '',
+          'class' => '',
+          'configurable_title' => 0,
+          'title' => '',
+        ),
+        'key' => FALSE,
+      ),
+      'widget' => array(
+        'weight' => '8',
+        'type' => 'link_field',
+        'module' => 'link',
+        'active' => 0,
+        'settings' => array(
+        ),
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'inline',
+          'type' => 'link_url',
+          'weight' => '5',
+          'settings' => array(
+          ),
+          'module' => 'link',
+        ),
+      ),
+    ),
+    '74' => array(
+      'field_name' => 'field_log_value',
+      'entity_type' => 'node',
+      'bundle' => 'world_of_logs_parse',
+      'label' => 'Value',
+      'description' => '',
+      'required' => 0,
+      'settings' => array(
+        'min' => '',
+        'max' => '',
+        'prefix' => '',
+        'suffix' => '',
+        'key' => FALSE,
+      ),
+      'widget' => array(
+        'weight' => '5',
+        'type' => 'number',
+        'module' => 'number',
+        'active' => 0,
+        'settings' => array(
+        ),
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'hidden',
+          'type' => 'number_decimal',
+          'weight' => '4',
+          'settings' => array(
+            'thousand_separator' => ',',
+            'decimal_separator' => '.',
+            'scale' => '2',
+            'prefix_suffix' => 1,
+          ),
+          'module' => 'number',
+        ),
+      ),
+    ),
+    '75' => array(
+      'field_name' => 'field_log_value_per_second',
+      'entity_type' => 'node',
+      'bundle' => 'world_of_logs_parse',
+      'label' => 'Value (per second)',
+      'description' => '',
+      'required' => 0,
+      'settings' => array(
+        'min' => '',
+        'max' => '',
+        'prefix' => '',
+        'suffix' => 'per second',
+        'key' => FALSE,
+      ),
+      'widget' => array(
+        'weight' => '6',
+        'type' => 'number',
+        'module' => 'number',
+        'active' => 0,
+        'settings' => array(
+        ),
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'hidden',
+          'type' => 'number_decimal',
+          'weight' => '3',
+          'settings' => array(
+            'thousand_separator' => ',',
+            'decimal_separator' => '.',
+            'scale' => '2',
+            'prefix_suffix' => 1,
+          ),
+          'module' => 'number',
+        ),
+      ),
+    ),
+    '76' => array(
+      'field_name' => 'field_rank_url',
+      'entity_type' => 'node',
+      'bundle' => 'world_of_logs_parse',
+      'label' => 'Rank URL',
+      'description' => '',
+      'required' => 0,
+      'settings' => array(
+        'validate_url' => 1,
+        'url' => 0,
+        'title' => 'none',
+        'title_value' => '',
+        'title_maxlength' => '128',
+        'enable_tokens' => 1,
+        'display' => array(
+          'url_cutoff' => '80',
+        ),
+        'attributes' => array(
+          'target' => 'default',
+          'rel' => '',
+          'class' => '',
+          'configurable_title' => 0,
+          'title' => '',
+        ),
+        'key' => FALSE,
+      ),
+      'widget' => array(
+        'weight' => '9',
+        'type' => 'link_field',
+        'module' => 'link',
+        'active' => 0,
+        'settings' => array(
+        ),
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'inline',
+          'type' => 'link_url',
+          'weight' => '6',
+          'settings' => array(
+          ),
+          'module' => 'link',
+        ),
+      ),
+    ),
+    '77' => array(
+      'field_name' => 'field_log_hash',
+      'entity_type' => 'node',
+      'bundle' => 'world_of_logs_parse',
+      'label' => 'Log Hash',
+      'description' => '',
+      'required' => 1,
+      'settings' => array(
+        'text_processing' => '0',
+        'better_formats' => array(
+          'allowed_formats_toggle' => 0,
+          'allowed_formats' => array(
+            'full_html' => 'full_html',
+            'simple_html' => 'simple_html',
+            'plain_text' => 'plain_text',
+          ),
+          'default_order_toggle' => 0,
+          'default_order_wrapper' => array(
+            'formats' => array(
+              'full_html' => array(
+                'weight' => '-10',
+              ),
+              'simple_html' => array(
+                'weight' => '-9',
+              ),
+              'plain_text' => array(
+                'weight' => '-8',
+              ),
+            ),
+          ),
+        ),
+        'key' => FALSE,
+      ),
+      'widget' => array(
+        'weight' => '10',
+        'type' => 'text_textfield',
+        'module' => 'text',
+        'active' => 1,
+        'settings' => array(
+          'size' => '60',
+        ),
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'type' => 'hidden',
+          'weight' => '16',
+          'settings' => array(
+          ),
+        ),
+      ),
+    ),
+    '78' => array(
+      'field_name' => 'field_rank_link_formatted',
+      'entity_type' => 'node',
+      'bundle' => 'world_of_logs_parse',
+      'label' => 'Rank Link Formatted',
+      'description' => '',
+      'required' => 0,
+      'settings' => array(
+        'text_processing' => '1',
+        'better_formats' => array(
+          'allowed_formats_toggle' => 0,
+          'allowed_formats' => array(
+            'full_html' => 'full_html',
+            'simple_html' => 'simple_html',
+            'plain_text' => 'plain_text',
+            'ds_code' => 'ds_code',
+          ),
+          'default_order_toggle' => 0,
+          'default_order_wrapper' => array(
+            'formats' => array(
+              'full_html' => array(
+                'weight' => '-10',
+              ),
+              'simple_html' => array(
+                'weight' => '-9',
+              ),
+              'plain_text' => array(
+                'weight' => '-8',
+              ),
+              'ds_code' => array(
+                'weight' => '12',
+              ),
+            ),
+          ),
+        ),
+        'key' => FALSE,
+      ),
+      'widget' => array(
+        'weight' => '11',
+        'type' => 'text_textarea',
+        'module' => 'text',
+        'active' => 1,
+        'settings' => array(
+          'rows' => '5',
+        ),
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+          'weight' => '13',
+          'settings' => array(
+          ),
+        ),
+      ),
+    ),
+    '79' => array(
+      'field_name' => 'field_raid_type',
+      'entity_type' => 'node',
+      'bundle' => 'world_of_logs_parse',
+      'label' => 'Raid Type',
+      'description' => '',
+      'required' => 0,
+      'settings' => array(
+        'key' => FALSE,
+      ),
+      'widget' => array(
+        'weight' => '12',
+        'type' => 'options_select',
+        'module' => 'options',
+        'active' => 1,
+        'settings' => array(
+        ),
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'type' => 'hidden',
+          'weight' => '17',
+          'settings' => array(
+          ),
+        ),
+      ),
+    ),
+    '80' => array(
+      'field_name' => 'field_raid_member',
+      'entity_type' => 'node',
+      'bundle' => 'world_of_logs_parse',
+      'label' => 'Raid Member',
+      'description' => '',
+      'required' => 0,
+      'settings' => array(
+        'key' => FALSE,
+      ),
+      'widget' => array(
+        'weight' => '2',
+        'type' => 'options_select',
+        'module' => 'options',
+        'active' => 1,
+        'settings' => array(
+        ),
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'type' => 'user_reference_default',
+          'settings' => array(
+          ),
+          'module' => 'user_reference',
+          'weight' => 18,
+        ),
+      ),
+    ),
+    '81' => array(
+      'field_name' => 'field_rank_spec',
+      'entity_type' => 'node',
+      'bundle' => 'world_of_logs_parse',
+      'label' => 'Rank Spec',
+      'description' => '',
+      'required' => 0,
+      'settings' => array(
+        'text_processing' => '0',
+        'better_formats' => array(
+          'allowed_formats_toggle' => 0,
+          'allowed_formats' => array(
+            'full_html' => 'full_html',
+            'simple_html' => 'simple_html',
+            'plain_text' => 'plain_text',
+            'ds_code' => 'ds_code',
+          ),
+          'default_order_toggle' => 0,
+          'default_order_wrapper' => array(
+            'formats' => array(
+              'full_html' => array(
+                'weight' => '-10',
+              ),
+              'simple_html' => array(
+                'weight' => '-9',
+              ),
+              'plain_text' => array(
+                'weight' => '-8',
+              ),
+              'ds_code' => array(
+                'weight' => '12',
+              ),
+            ),
+          ),
+        ),
+        'key' => FALSE,
+      ),
+      'widget' => array(
+        'weight' => '13',
+        'type' => 'text_textfield',
+        'module' => 'text',
+        'active' => 1,
+        'settings' => array(
+          'size' => '60',
+        ),
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'type' => 'text_default',
+          'settings' => array(
+          ),
+          'module' => 'text',
+          'weight' => 19,
+        ),
+      ),
+    ),
+    '82' => array(
+      'field_name' => 'field_rank_class',
+      'entity_type' => 'node',
+      'bundle' => 'world_of_logs_parse',
+      'label' => 'Rank Class',
+      'description' => '',
+      'required' => 0,
+      'settings' => array(
+        'text_processing' => '0',
+        'better_formats' => array(
+          'allowed_formats_toggle' => 0,
+          'allowed_formats' => array(
+            'full_html' => 'full_html',
+            'simple_html' => 'simple_html',
+            'plain_text' => 'plain_text',
+            'ds_code' => 'ds_code',
+          ),
+          'default_order_toggle' => 0,
+          'default_order_wrapper' => array(
+            'formats' => array(
+              'full_html' => array(
+                'weight' => '-10',
+              ),
+              'simple_html' => array(
+                'weight' => '-9',
+              ),
+              'plain_text' => array(
+                'weight' => '-8',
+              ),
+              'ds_code' => array(
+                'weight' => '12',
+              ),
+            ),
+          ),
+        ),
+        'key' => FALSE,
+      ),
+      'widget' => array(
+        'weight' => '14',
+        'type' => 'text_textfield',
+        'module' => 'text',
+        'active' => 1,
+        'settings' => array(
+          'size' => '60',
+        ),
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'type' => 'text_default',
+          'settings' => array(
+          ),
+          'module' => 'text',
+          'weight' => 20,
+        ),
+      ),
+    ),
+  );
+
+  return $instances;
+
+}

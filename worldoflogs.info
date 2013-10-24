@@ -1,0 +1,8 @@
+name = World of Logs
+description = Module to parse World of Logs and fetch top performers for a specific guild (or guilds).
+project = worldoflogs
+package = World of Warcraft
+
+dependencies[] = wow_character
+
+core = "7.x"
